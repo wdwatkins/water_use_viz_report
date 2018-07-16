@@ -1,0 +1,56 @@
+---
+title: "Water Use 2015 data"
+author: "David Watkins"
+date: "July 13, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(googleAnalyticsR)
+library(googleAuthR)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+```{r not_with_dims, echo = FALSE, message = FALSE}
+view <- "177200146"
+release_date <- as.Date("2018-06-19")
+gar_auth_service('~/.vizlab/VIZLAB-a48f4107248c.json')
+#options(googleAuthR.verbose = 4)
+
+source('bulk_sessions.R')
+sessions_plot <- invisible(get_time_series_plot(view, release_date))
+print(sessions_plot)
+
+platforms <- invisible(get_platform_plot(view, release_date))
+print(platforms)
+
+total_sessions <- invisible(google_analytics(viewId = view, 
+                                   date_range = c(start = release_date, end = Sys.Date()),
+                                   metrics = "sessions")$sessions)
+
+source_table <- get_campaign_source_table(view, release_date) %>% 
+  mutate(frac_internal = round(frac_internal, digits = 2)) %>% arrange(desc(source_campaign_total))
+DT::datatable(source_table, colnames = c("Campaign", "Source", "Keyword", "Sessions", "Fraction on network"),
+              caption = "Sessions grouped by UTM parameters")
+
+```
+
+```{r new_dims, fig.align='center', echo = FALSE, message=FALSE}
+events <- google_analytics(viewId = view, 
+                           date_range = c(start = release_date, end = Sys.Date()),
+                           dimensions = c("eventAction", "eventLabel", "dimension2"),
+                           metrics = c("totalEvents"), max = -1, 
+                           anti_sample = TRUE) %>% rename(sessionID = dimension2)
+scrolls <- events %>% filter(eventAction == "scroll") %>% group_by(eventLabel) %>% 
+  summarize(n=length(unique(sessionID))) %>% arrange(desc(n)) %>% 
+  mutate(fraction_of_sessions = round(n/total_sessions, digits = 2))
+library(kableExtra)
+knitr::kable(scrolls, col.names = c("Scroll point", "Sessions", "Fraction of sessions")) %>% 
+   kable_styling(full_width = F, position = "float_left")
+knitr::kable(data.frame(Avg = "foo")) %>% kable_styling(full_width = F, position = "center")
+#knitr::kable(list(scrolls, data.frame(Avg = "foo")), align = "c")
+```
