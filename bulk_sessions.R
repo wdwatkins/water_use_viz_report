@@ -34,7 +34,8 @@ get_platform_plot <- function(viewId, release_date) {
                                 dimensions = c("deviceCategory"),
                                 metrics = c("sessions"), max = -1, 
                                 anti_sample = TRUE)
-  plot <- ggplot(platforms, aes(x = deviceCategory, y = sessions)) + geom_col() + 
+  plot <- ggplot(platforms, aes(x = deviceCategory, y = sessions)) + 
+    geom_col() + 
     ylab("Sessions") + xlab("Device category")
   return(plot)
 }
@@ -86,7 +87,8 @@ get_time_series_plot <- function(viewId, release_date) {
     scale_x_datetime(date_minor_breaks = "12 hours", 
                      date_breaks = "24 hours", 
                      expand = c(0,0)) + 
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    labs(color = "Source", x = "Date", y="Sessions")
   return(plot)
 }
 
