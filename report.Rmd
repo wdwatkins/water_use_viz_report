@@ -1,10 +1,8 @@
 ---
-title: "Water Use 2015 Google Analytics analysis"
-author: "David Watkins"
-date: "July 23, 2018"
-output: html_document
+title: "2015 Water Use release metrics"
+date: "July 31, 2018"
+output: pdf_document
 ---
-[https://owi.usgs.gov/vizlab/water-use-15](https://owi.usgs.gov/vizlab/water-use-15)
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -15,46 +13,44 @@ library(ggplot2)
 library(lubridate)
 ```
 
-## Traffic attribution
-
-Unlike previous visualizations, Twitter was the biggest driver of traffic rather than Reddit, likely due to the gif used in the Reddit post.  
-```{r not_with_dims, echo = FALSE, message = FALSE, fig.width=8}
+```{r not_with_dims, echo = FALSE, message = FALSE, fig.width=8, fig.height=3 }
 view <- "177200146"
 release_date <- as.Date("2018-06-19")
 gar_auth_service('~/.vizlab/VIZLAB-a48f4107248c.json')
 
 source('bulk_sessions.R')
-sessions_plot <- invisible(get_time_series_plot(view, release_date))
-print(sessions_plot)
+sessions_sources <- get_time_series_plot(view, release_date) %>% group_by(big_source) %>% 
+  summarize(n=sum(sessions))
+#ggplot(sessions_sources, aes(x = reorder(big_source, desc(n)), y = n)) + geom_col() +
+#  ylab("Visits") + xlab("Source")
+
+
+
 
 total_sessions <- invisible(google_analytics(viewId = view, 
                                              date_range = c(start = release_date, end = Sys.Date()),
                                              metrics = "sessions")$sessions)
 
-source_table <- get_campaign_source_table(view, release_date) %>% 
-  mutate(frac_internal = round(frac_internal, digits = 2)) %>% arrange(desc(source_campaign_total))
-DT::datatable(source_table, colnames = c("Campaign", "Source", "Keyword", "Sessions", "Fraction on network"),
-              caption = "Sessions grouped by UTM parameters")
 
 
 ```
 
-### Platforms
+## Overall views
+The gif and static map, which could be fully shared over social media, had a much wider reach than the data viz or report:
 
-Also unlike previous recent visualizations, desktop accounted for the majority of traffic instead of mobile:
-```{r platforms, echo = FALSE, message = FALSE}
-
-platforms <- invisible(get_platform_plot(view, release_date))
-print(platforms)
+```{r overall, echo = FALSE, fig.height=2.5}
+df <- tibble(thing = c("Report", "Data viz", "GIFs", "Static images"),
+             views = c(1514,3132, 198658,76315))
+ggplot(df, aes(x = reorder(thing, desc(views)), y = views)) + geom_col() +
+  xlab("Product") + ylab("Pageviews/reach")
+ggsave("overall_views.png")
 ```
 
-## Utilizing custom dimensions
-Since traffic to this viz was relatively low, this section is more of a demonstration of custom dimensions than a specific analysis of user behavior for this viz.  [This blog post](https://www.simoahava.com/analytics/13-useful-custom-dimensions-for-google-analytics/#2-good-all-around-custom-dimensions) provides a good guide to them. We implemented the first three dimensions (hit time stamp, session ID, and client ID).  This lets us know when a particular event happened, and unique identifier to group it with other events in the same session or by the same client.
 
-Due to the intricacies of our GA implementation when this viz was released, client ID is more reliable than the session ID, in that it is _always_ attached to hits.  With our implementation of client ID, if a user never triggered an event after the initial pageview hit, a client ID was never generated.  This means the number of sesssions that _didn't_ do something has to be calculated by subtracting the number of sessions that _did_ from the total session count. This is fixed as of `vizlab` v0.3.7.  
+## User engagement
+Nearly half of all visits viewed the entire viz:
 
-Scroll tracking was also added to this viz.  Having a session ID allows us to eliminate duplicate events within the same session (for instance if someone scrolled part way down, then scrolled back up, triggering scroll events towards the top multiple times).
-```{r new_dims, fig.align='center', echo = FALSE, message=FALSE}
+```{r new_dims, fig.align='center', echo = FALSE, message=FALSE, warning = FALSE, fig.height=3.5}
 events <- google_analytics(viewId = view, 
                            date_range = c(start = release_date, end = Sys.Date()),
                            dimensions = c("eventAction", "eventLabel", "dimension2"),
@@ -64,105 +60,25 @@ scrolls <- events %>% filter(eventAction == "scroll") %>% group_by(eventLabel) %
   summarize(n=length(unique(sessionID))) %>% arrange(desc(n)) %>% 
   mutate(fraction_of_sessions = round(n/total_sessions, digits = 2),
          eventLabel = gsub(pattern = "-", replacement = " ", eventLabel)) 
-knitr::kable(scrolls, col.names = c("Scroll point", "Sessions", "Fraction of sessions"))  
+
+state_game_events <- events %>% filter(grepl(pattern = "state", x= eventAction)) 
+ids <- unique(state_game_events$sessionID)
+state_df <- data.frame(eventLabel = "Attempted interactive game",
+                       fraction_of_sessions = round(length(ids)/total_sessions, digits = 2))
+scrolls_state <- bind_rows(scrolls, state_df)
+ggplot(scrolls_state, aes(x = reorder(eventLabel, desc(fraction_of_sessions)), y = fraction_of_sessions*100)) + geom_col() + theme(axis.text.x = element_text(angle = 45, hjust=1)) + xlab("Scroll points reached") + ylab("Percent of visits") 
+ggsave(filename = "engagement.png")
 ```
 
-The scroll events also have timestamps attached, which makes it possible to look at time spent on particular parts of the page.
 
-Changing map views (different state or national zoom) was recorded with another custom event.  The session ID dimension allows us to associate all views that occurred in the same session.  Without this, we could only compute an average --- in this case about 5 view changes per session.  This obscures that a majority of sessions never changed the map view, and that the data is nowhere near normally distributed.
-```{r view_changes, echo = FALSE, message=FALSE}
-view_changes <- events %>% filter(eventAction == "update view")
-view_change_sessions <- length(unique(view_changes$sessionID))
-no_view_changes <- total_sessions - view_change_sessions
-summed_view_changes <- view_changes %>% group_by(sessionID) %>% 
-  summarize(n_view_changes=n()) %>% 
-  ungroup() %>% group_by(n_view_changes) %>% summarize(n_sessions=n()) %>% 
-  bind_rows(data.frame(n_view_changes=0, n_sessions=no_view_changes))
-avg_view_changes <- round(sum(view_changes$totalEvents)/total_sessions, digits = 1)
-ggplot(summed_view_changes, aes(x = n_view_changes, y = n_sessions)) + 
-  geom_col() + scale_x_continuous(minor_breaks = 1:30, breaks = seq(0,30,5)) +
-  xlab("Number of view changes") + ylab("Sessions") + 
-  annotate("text", label = paste("Average", avg_view_changes, "view changes per session"), x = 15, y=1500, size = 5)
+
+
+
+
+
+```{r platforms, echo = FALSE, message = FALSE, fig.height=3}
+
+platforms <- invisible(get_platform_plot(view, release_date))
+#platforms + ylab("Visits")
 ```
-
-We can do the same with the events that recorded changing the category on the map.  Similarly, the average does not tell the whole story of this distribution.    
-```{r cat_changes, echo = FALSE}
-cat_changes <- events %>% filter(grepl(pattern = "update category", x = eventAction)) 
-no_cat_changes <- total_sessions - length(unique(cat_changes$sessionID))
-summed_cat_changes <- cat_changes %>% 
-  group_by(sessionID) %>% summarize(n_cat_changes = n()) %>% ungroup() %>% 
-  group_by(n_cat_changes) %>% summarize(n_sessions=n()) %>% 
-  bind_rows(data.frame(n_cat_changes=0, n_sessions = no_cat_changes)) %>% 
-  arrange(n_cat_changes)
-avg_cat_changes <- round(sum(cat_changes$totalEvents)/total_sessions, digits = 1)
-ggplot(summed_cat_changes, aes(x = n_cat_changes, y = n_sessions)) + 
-  geom_col() + scale_x_continuous(minor_breaks = 1:30, breaks = seq(0,30,5)) +
-  xlab("Number of category changes") + ylab("Sessions") +
-  annotate("text", label = paste("Average", avg_cat_changes, "category changes per session"), x = 15, y=1000, size = 5)
-```
-
-Now we know that a majority of sessions didn't change the map view, and a smaller but still substantial portion didn't change the category either.  We might suspect that these two groups overlap.  Since there is a unique identifier associated these events, we can actually find correlations.  However, it is somewhat tricky since we don't know the session IDs that didn't interact, only the ones that did.  I will switch to using client ID since it was recorded for all sessions. Since there is a common label for events, we can perform statistical tests between them.  
-
-``` {r custom_dims_join, echo = FALSE, message = FALSE, warning = FALSE}
-
-events_client <- google_analytics(viewId = view, 
-                                  date_range = c(start = release_date, end = Sys.Date()),
-                                  dimensions = c("eventAction", "eventLabel", "dimension1"),
-                                  metrics = c("totalEvents"), max = -1, 
-                                  anti_sample = TRUE) %>% rename(clientID = dimension1)
-cat_change_clients <- events_client %>% filter(grepl(pattern = "update category", x = eventAction)) %>% 
-  group_by(clientID) %>% summarize(n_cat_changes = n())
-view_change_clients <- events_client %>% filter(grepl(pattern = "update view", x = eventAction)) %>% group_by(clientID) %>% summarize(n_view_changes = n())
-
-joined_cat_view_changes <- left_join(cat_change_clients, view_change_clients, by = "clientID")
-all_client_ids <- google_analytics(viewId = view, 
-                                   date_range = c(start = release_date, end = Sys.Date()),
-                                   dimensions = c("dimension1"),
-                                   metrics = c("sessions"), max = -1, 
-                                   anti_sample = TRUE) %>% rename(clientID = dimension1)
-joined_clients_all <- left_join(all_client_ids, joined_cat_view_changes, by = "clientID") %>%  
-  tidyr::replace_na(replace = list(n_cat_changes = 0, n_view_changes = 0))
-no_view_cat_changes <- joined_clients_all %>% 
-  filter(n_view_changes == 0 & n_cat_changes == 0)
-view_cat_cor <- cor.test(joined_clients_all$n_cat_changes, joined_clients_all$n_view_changes,
-                    method = "spearman", alternative = "greater")
-ggplot(joined_clients_all, aes(x=n_view_changes, y= n_cat_changes)) + geom_point() + 
-  annotate(geom = "text", x = 30, y = 5, label = paste("Spearman correlation:", round(view_cat_cor$estimate, digits = 2), "\np-value:", view_cat_cor$p.value)) +
-  labs(y="Number of map category changes", x = "Number of map view changes")
-```
-
-There is a statistically significant correlation between the number of times a user changed categories and views on the interactive map.  
-
-Based on the previous plots, there was a substantial number of visitors that didn't interact with the map at all.  We can look for common denominators between those visitors.  
-
-The source of these sessions seems little different than traffic as a whole:
-```{r table_source_no_map_interact, echo = FALSE, message = FALSE}
-check_clients <- google_analytics(viewId = view, 
-                                  date_range = c(start = release_date, end = Sys.Date()),
-                                  dimensions = c("dimension1", "networkDomain", "metro", "deviceCategory", "browser", "source"),
-                                  metrics = c("sessions"), max = -1, 
-                                  anti_sample = TRUE) %>% rename(clientID = dimension1)
-no_view_cat_changes_dims <- left_join(no_view_cat_changes, check_clients, by = "clientID")
-sources_no_map_interact <- group_by(no_view_cat_changes_dims, source) %>% summarize(n=sum(sessions.y)) %>% arrange(desc(n))
-DT::datatable(sources_no_map_interact)
-```
-
-Platform seems to have some relevance though:
-``` {r check_client_platforms, echo = FALSE}
-
-check_clients_platform <- check_clients %>% group_by(clientID, deviceCategory) %>% summarize(sessions = sum(sessions)) 
-joined_clients_interactions_platforms <- left_join(joined_clients_all, check_clients_platform, by = "clientID") %>% mutate(interacted = ifelse(n_cat_changes == 0 & n_view_changes == 0,
-                                             yes = FALSE, no = TRUE))
- 
-
-
-ggplot(joined_clients_interactions_platforms, aes(deviceCategory, sessions.x)) + 
-  geom_col(aes(fill = interacted)) + labs(y = "Sessions", x = "Device category", fill = "Changed view or category")
-```
-
-Looking at device categories, now grouped by whether they interacted with the main map, we can see that most desktop users interacted with the map, while only about half of mobile and tablet users did.  We could ultimately do similar things with any GA dimension we were interested in, page load speed for instance (though this is only available for a sample of sessions).
-
-## Conclusion
-
-  The added data granularity of custom dimensions opens up a wide range of analyses that can better answer questions about how visitors interact with a web page.  They allow us to see the full distribution of events per session rather than just averages; they let us perform paired statistical tests; and they allow us to easily investigate particular segments defined by multiple events.  All of this can be accomplished with a very minimal amount of javascript, in addition to a standard Google Analytics setup with custom events. 
 

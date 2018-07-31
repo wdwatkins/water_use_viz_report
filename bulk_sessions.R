@@ -89,7 +89,7 @@ get_time_series_plot <- function(viewId, release_date) {
                      expand = c(0,0)) + 
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
     labs(color = "Source", x = "Date", y="Sessions")
-  return(plot)
+  return(time_series_big_source_padded)
 }
 
 
