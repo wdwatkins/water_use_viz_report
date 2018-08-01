@@ -42,7 +42,7 @@ The gif and static map, which could be fully shared over social media, had a muc
 df <- tibble(thing = c("Report", "Data viz", "GIFs", "Static images"),
              views = c(1514,3132, 198658,76315))
 ggplot(df, aes(x = reorder(thing, desc(views)), y = views)) + geom_col() +
-  xlab("Product") + ylab("Pageviews/reach")
+  xlab("Product") + ylab("Views")
 ggsave("overall_views.png")
 ```
 
@@ -62,11 +62,29 @@ scrolls <- events %>% filter(eventAction == "scroll") %>% group_by(eventLabel) %
          eventLabel = gsub(pattern = "-", replacement = " ", eventLabel)) 
 
 state_game_events <- events %>% filter(grepl(pattern = "state", x= eventAction)) 
-ids <- unique(state_game_events$sessionID)
-state_df <- data.frame(eventLabel = "Attempted interactive game",
-                       fraction_of_sessions = round(length(ids)/total_sessions, digits = 2))
-scrolls_state <- bind_rows(scrolls, state_df)
-ggplot(scrolls_state, aes(x = reorder(eventLabel, desc(fraction_of_sessions)), y = fraction_of_sessions*100)) + geom_col() + theme(axis.text.x = element_text(angle = 45, hjust=1)) + xlab("Scroll points reached") + ylab("Percent of visits") 
+game_event_ids <- unique(state_game_events$sessionID)
+state_df <- tibble(eventLabel = "attempted interactive game",
+                       fraction_of_sessions = round(length(game_event_ids)/total_sessions, digits = 2))
+
+#changed category
+cat_changes <- events %>% filter(grepl(pattern = "update category", 
+                                       x=eventAction))
+cat_change_ids <- unique(cat_changes$sessionID)
+cat_change_df <- tibble(eventLabel = "changed WU category",
+                        fraction_of_sessions = round(length(cat_change_ids)/total_sessions, digits = 2))
+library(tidyr)
+state_zooms <- events %>% filter(grepl(pattern = "update view", x = eventAction)) %>% separate(col = "eventLabel", into = c("newView", "oldView", "category"), sep = ";") %>% mutate(newView=trimws(gsub("newView=", "", newView)),
+       oldView = trimws(gsub("oldView=", "", oldView))) %>% filter(newView != oldView) 
+zoom_change_ids <- unique(state_zooms$sessionID) 
+zoom_change_df <- tibble(eventLabel = "zoomed to/from state view",
+                         fraction_of_sessions = round(length(zoom_change_ids)/total_sessions, digits = 2))
+                                                                                                                                                                                     
+scrolls_state <- bind_rows(scrolls, state_df, cat_change_df, zoom_change_df) %>% 
+  filter(!eventLabel %in% c("scrolled to national pie", "scrolled to rank states interactive", "scrolled to data collection", "scrolled to related items")) %>% 
+  mutate(eventLabel = gsub("scrolled to national static pie", "viewed national annotated map", eventLabel),
+         eventLabel = gsub("scrolled to", "viewed", eventLabel))
+
+ggplot(scrolls_state, aes(x = reorder(eventLabel, desc(fraction_of_sessions)), y = fraction_of_sessions*100)) + geom_col() + theme(axis.text.x = element_text(angle = 45, hjust=1)) + xlab("User interactions") + ylab("Percent of visits") 
 ggsave(filename = "engagement.png")
 ```
 
