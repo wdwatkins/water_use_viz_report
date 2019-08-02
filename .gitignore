@@ -1,0 +1,5 @@
+*.rds
+*.png
+*.html
+*.Rproj
+.Rproj.user

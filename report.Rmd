@@ -39,11 +39,11 @@ total_sessions <- invisible(google_analytics(viewId = view,
 The gif and static map, which could be fully shared over social media, had a much wider reach than the data viz or report:
 
 ```{r overall, echo = FALSE, fig.height=2.5}
-df <- tibble(thing = c("Report", "Data viz", "GIFs", "Static images"),
-             views = c(1514,3132, 198658,76315))
-ggplot(df, aes(x = reorder(thing, desc(views)), y = views)) + geom_col() +
-  xlab("Product") + ylab("Views")
-ggsave("overall_views.png")
+# df <- tibble(thing = c("Report", "Data viz", "GIFs", "Static images"),
+#              views = c(1514,3132, 198658,76315))
+# ggplot(df, aes(x = reorder(thing, desc(views)), y = views)) + geom_col() +
+#   xlab("Product") + ylab("Views")
+# ggsave("overall_views.png")
 ```
 
 
@@ -78,7 +78,13 @@ state_zooms <- events %>% filter(grepl(pattern = "update view", x = eventAction)
 zoom_change_ids <- unique(state_zooms$sessionID) 
 zoom_change_df <- tibble(eventLabel = "zoomed to/from state view",
                          fraction_of_sessions = round(length(zoom_change_ids)/total_sessions, digits = 2))
-                                                                                                                                                                                     
+
+#new for shoemaker award app
+zoom_or_cat_ids <- unique(c(zoom_change_ids, cat_change_ids))
+interacted_df <- tibble(eventLabel = "changed zoom or category",
+                        fraction_of_sessions = round(length(zoom_or_cat_ids)/total_sessions, digits = 2))
+                                                        
+                                                        
 scrolls_state <- bind_rows(scrolls, state_df, cat_change_df, zoom_change_df) %>% 
   filter(!eventLabel %in% c("scrolled to national pie", "scrolled to rank states interactive", "scrolled to data collection", "scrolled to related items")) %>% 
   mutate(eventLabel = gsub("scrolled to national static pie", "viewed national annotated map", eventLabel),
